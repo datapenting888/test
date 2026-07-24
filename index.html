@@ -309,7 +309,31 @@ tbody tr:last-child td { border-bottom: none; }
 <button type="submit">Proses & Hitung</button>
 </form>
 
-<!-- Tabel Hasil Output -->
+<!-- Kalkulator Konversi Notasi Voor / Cara Baca Pasaran Handicap -->
+<div class="form-group" style="margin-top: 34px;">
+<h3>Kalkulator Baca Pasaran (Voor)</h3>
+<label for="voorInput">Masukkan nilai handicap (desimal, rentang, atau notasi Voor):</label>
+<input type="text" id="voorInput" placeholder='Contoh: 0.75  atau  0.5-1  atau  Voor 3/4' onkeydown="if(event.key==='Enter'){event.preventDefault(); convertVoor();}">
+<button type="button" onclick="convertVoor()" style="margin-top: 12px;">Konversi</button>
+<pre id="voorResult" class="neutral" style="margin-top:16px; white-space: pre-wrap; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.6; display:none;"></pre>
+
+<table style="margin-top:24px;">
+<thead>
+<tr><th>Rentang / Nilai</th><th>Notasi Voor</th></tr>
+</thead>
+<tbody>
+<tr><td>0 - 0.5</td><td>Voor 1/4</td></tr>
+<tr><td>0.5</td><td>Voor 1/2</td></tr>
+<tr><td>0.5 - 1</td><td>Voor 3/4</td></tr>
+<tr><td>1 - 1.5</td><td>Voor 1 1/4</td></tr>
+<tr><td>1.5</td><td>Voor 1 1/2</td></tr>
+<tr><td>1.5 - 2</td><td>Voor 1 3/4</td></tr>
+<tr><td>2</td><td>Voor 2</td></tr>
+<tr><td>2 - 2.5</td><td>Voor 2 1/4</td></tr>
+</tbody>
+</table>
+</div>
+
 <div id="result-section">
 <h3>Hasil Kalkulasi Dashboard:</h3>
 <table>
@@ -379,6 +403,70 @@ function autoGrowTextarea(el, minHeight) {
     let newHeight = el.scrollHeight;
     if (minHeight && newHeight < minHeight) newHeight = minHeight;
     el.style.height = newHeight + 'px';
+}
+
+// ============================================================
+// HANDLER KALKULATOR KONVERSI VOOR (UI "Kalkulator Baca Pasaran")
+// ============================================================
+// Menerima input dalam 3 kemungkinan format:
+//   1) Notasi Voor eksplisit   -> "Voor 3/4", "Voor 1 1/4", "Voor 2"
+//   2) Notasi rentang          -> "0.5-1", "-0.5-1", "+0.5-1"
+//   3) Desimal/pecahan biasa   -> "0.75", "3/4", "1 1/4", "-0.75"
+// Lalu menampilkan: nilai desimal, notasi Voor, notasi rentang (jika
+// garis quarter), dan pemecahan 2 sub-garisnya.
+function convertVoor() {
+    let raw = document.getElementById('voorInput').value;
+    let outEl = document.getElementById('voorResult');
+    outEl.style.display = 'block';
+
+    if (!raw || !raw.trim()) {
+        outEl.textContent = 'Masukkan nilai handicap terlebih dahulu.';
+        outEl.className = 'lose';
+        return;
+    }
+
+    let text = normalizeBetText(raw).trim();
+    let magnitude = null;
+
+    let voorMatch = text.match(/^voor\s+(.+)$/i);
+    if (voorMatch) {
+        magnitude = parseVoorFractionToDecimal(voorMatch[1].trim());
+    } else {
+        let rangeMatch = text.match(/^([+-]?)\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$/);
+        if (rangeMatch) {
+            let a = parseFloat(rangeMatch[2]), b = parseFloat(rangeMatch[3]);
+            magnitude = (a + b) / 2;
+        } else {
+            magnitude = parseVoorFractionToDecimal(text.replace(/^[+-]/, '').trim());
+        }
+    }
+
+    if (magnitude === null || isNaN(magnitude)) {
+        outEl.textContent = 'Format tidak dikenali. Contoh yang didukung: "0.75", "0.5-1", atau "Voor 3/4".';
+        outEl.className = 'lose';
+        return;
+    }
+
+    let info = decimalToVoorInfo(magnitude);
+    let lines = [];
+    lines.push('Desimal        : ' + fmtPlain(info.decimal));
+    lines.push('Notasi Voor    : ' + info.voorLabel);
+    if (info.isQuarter) {
+        lines.push('Notasi Rentang : ' + info.rangeLabel);
+        lines.push('');
+        lines.push('Ini garis QUARTER, di bandar dipecah jadi 2 sub-handicap');
+        lines.push('@ setengah stake masing-masing:');
+        lines.push('  Sub 1 : ' + fmtPlain(info.subLines[0]));
+        lines.push('  Sub 2 : ' + fmtPlain(info.subLines[1]));
+    } else {
+        lines.push('');
+        lines.push('Ini garis penuh/setengah biasa (tidak dipecah menjadi sub-garis).');
+    }
+    lines.push('');
+    lines.push('Catatan tanda: tim yang DI-VOOR (favorit) memakai MINUS (-' + fmtPlain(info.decimal) + '),');
+    lines.push('tim lawan (underdog, penerima voor) memakai PLUS (+' + fmtPlain(info.decimal) + ').');
+    outEl.textContent = lines.join('\n');
+    outEl.className = 'neutral';
 }
 
 
@@ -459,6 +547,56 @@ function parseBetDescription(desc) {
     return { market: 'unknown', selection: null };
 }
 
+// ============================================================
+// NOTASI "VOOR" (cara baca pasaran handicap ala bandar Indonesia)
+// ============================================================
+// Bandar Indonesia sering menulis garis quarter sebagai RENTANG dua
+// angka (mis. "0.5-1" = Voor 3/4) alih-alih desimal langsung (0.75).
+// Referensi lengkap:
+//   0-0.5    = Voor 1/4      |  1-1.5   = Voor 1 1/4
+//   0.5      = Voor 1/2      |  1.5     = Voor 1 1/2
+//   0.5-1    = Voor 3/4      |  1.5-2   = Voor 1 3/4
+//   2        = Voor 2        |  2-2.5   = Voor 2 1/4
+// Fungsi di bawah ini mengonversi pecahan/campuran ("3/4", "1 1/4")
+// menjadi desimal, dipakai baik oleh parser slip taruhan maupun oleh
+// kalkulator konversi cepat di halaman.
+// ============================================================
+function parseVoorFractionToDecimal(text) {
+    text = text.trim();
+    let mixedMatch = text.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)$/);
+    if (mixedMatch) return parseInt(mixedMatch[1], 10) + parseInt(mixedMatch[2], 10) / parseInt(mixedMatch[3], 10);
+    let fracMatch = text.match(/^(\d+)\s*\/\s*(\d+)$/);
+    if (fracMatch) return parseInt(fracMatch[1], 10) / parseInt(fracMatch[2], 10);
+    let wholeMatch = text.match(/^(\d+(?:\.\d+)?)$/);
+    if (wholeMatch) return parseFloat(wholeMatch[1]);
+    return null;
+}
+
+// Format angka polos tanpa desimal berlebih: 0.5 -> "0.5", 1 -> "1", 1.5 -> "1.5"
+function fmtPlain(n) {
+    return (Math.round(n * 100) / 100).toString();
+}
+
+// Konversi besaran (magnitude, tanpa tanda +/-) desimal handicap menjadi
+// info notasi Voor + rentang + (jika quarter) pemecahan 2 sub-garis.
+function decimalToVoorInfo(magnitude) {
+    magnitude = Math.abs(magnitude);
+    let quarterUnits = Math.round(magnitude * 4);
+    let isQuarter = quarterUnits % 2 !== 0;
+    let wholeUnits = Math.floor(quarterUnits / 4);
+    let remUnits = quarterUnits % 4;
+    let fracLabel = remUnits === 1 ? '1/4' : remUnits === 2 ? '1/2' : remUnits === 3 ? '3/4' : '';
+    let voorLabel = 'Voor ' + (wholeUnits > 0 ? (wholeUnits + (fracLabel ? ' ' + fracLabel : '')) : (fracLabel || '0'));
+    let result = { decimal: magnitude, voorLabel: voorLabel, isQuarter: isQuarter, rangeLabel: null, subLines: null };
+    if (isQuarter) {
+        let lower = (quarterUnits - 1) / 4;
+        let upper = (quarterUnits + 1) / 4;
+        result.rangeLabel = fmtPlain(lower) + '-' + fmtPlain(upper);
+        result.subLines = [lower, upper];
+    }
+    return result;
+}
+
 function parseBetLine(betLineRaw) {
     let oddsMatch = betLineRaw.match(/@\s*([\d.]+)\s*$/);
     let odds = oddsMatch ? parseFloat(oddsMatch[1]) : NaN;
@@ -499,10 +637,43 @@ function parseBetLine(betLineRaw) {
 
     // Lepas tanda kurung pembungkus angka garis, mis. "(-0.75)" -> "-0.75"
     withoutOdds = withoutOdds.replace(/\(\s*([+-]?[\d.]+)\s*\)\s*$/, '$1').trim();
-    // Perhatikan tanda +/- di depan angka garis (penting untuk Handicap, mis. -0.75)
-    let lineMatch = withoutOdds.match(/([+-]?[\d.]+)\s*$/);
-    let line = lineMatch ? parseFloat(lineMatch[1]) : null;
-    let withoutLine = lineMatch ? withoutOdds.slice(0, lineMatch.index).trim() : withoutOdds;
+
+    let line = null, withoutLine = withoutOdds;
+
+    // --- Notasi "Voor" eksplisit, mis. "Voor 3/4", "Voor 1 1/4", "Voor 2" ---
+    // Secara konvensi, "Voor" berarti tim yang disebut MEMBERI handicap
+    // (dialah favoritnya), sehingga garisnya selalu NEGATIF untuk tim itu.
+    let voorMatch = withoutOdds.match(/voor\s+([\d\s\/]+?)\s*$/i);
+    if (voorMatch) {
+        let magnitude = parseVoorFractionToDecimal(voorMatch[1].trim());
+        if (magnitude !== null) {
+            line = -magnitude;
+            withoutLine = withoutOdds.slice(0, voorMatch.index).trim();
+        }
+    }
+
+    // --- Notasi RENTANG ala bandar Indonesia, mis. "0.5-1" (= Voor 3/4),
+    // boleh diberi tanda +/- di depan, mis. "-0.5-1" atau "+0.5-1" ---
+    if (line === null) {
+        let rangeMatch = withoutOdds.match(/([+-]?)\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$/);
+        if (rangeMatch) {
+            let a = parseFloat(rangeMatch[2]), b = parseFloat(rangeMatch[3]);
+            if (Math.abs(Math.abs(b - a) - 0.5) < 0.001) {
+                let sign = rangeMatch[1] === '-' ? -1 : 1;
+                line = sign * ((a + b) / 2);
+                withoutLine = withoutOdds.slice(0, rangeMatch.index).trim();
+            }
+        }
+    }
+
+    // --- Fallback: notasi desimal biasa, mis. "-0.75", "1.5" (seperti semula) ---
+    if (line === null) {
+        // Perhatikan tanda +/- di depan angka garis (penting untuk Handicap, mis. -0.75)
+        let lineMatch = withoutOdds.match(/([+-]?[\d.]+)\s*$/);
+        line = lineMatch ? parseFloat(lineMatch[1]) : null;
+        withoutLine = lineMatch ? withoutOdds.slice(0, lineMatch.index).trim() : withoutOdds;
+    }
+
     let parsed = parseBetDescription(withoutLine);
     return {
         odds: odds,
