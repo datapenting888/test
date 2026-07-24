@@ -309,32 +309,8 @@ tbody tr:last-child td { border-bottom: none; }
 <button type="submit">Proses & Hitung</button>
 </form>
 
-<!-- Kalkulator Konversi Notasi Voor / Cara Baca Pasaran Handicap -->
-<div class="form-group" style="margin-top: 34px;">
-<h3>Kalkulator Baca Pasaran (Voor)</h3>
-<label for="voorInput">Masukkan nilai handicap (desimal, rentang, atau notasi Voor):</label>
-<input type="text" id="voorInput" placeholder='Contoh: 0.75  atau  0.5-1  atau  Voor 3/4' onkeydown="if(event.key==='Enter'){event.preventDefault(); convertVoor();}">
-<button type="button" onclick="convertVoor()" style="margin-top: 12px;">Konversi</button>
-<pre id="voorResult" class="neutral" style="margin-top:16px; white-space: pre-wrap; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.6; display:none;"></pre>
-
-<table style="margin-top:24px;">
-<thead>
-<tr><th>Rentang / Nilai</th><th>Notasi Voor</th></tr>
-</thead>
-<tbody>
-<tr><td>0 - 0.5</td><td>Voor 1/4</td></tr>
-<tr><td>0.5</td><td>Voor 1/2</td></tr>
-<tr><td>0.5 - 1</td><td>Voor 3/4</td></tr>
-<tr><td>1 - 1.5</td><td>Voor 1 1/4</td></tr>
-<tr><td>1.5</td><td>Voor 1 1/2</td></tr>
-<tr><td>1.5 - 2</td><td>Voor 1 3/4</td></tr>
-<tr><td>2</td><td>Voor 2</td></tr>
-<tr><td>2 - 2.5</td><td>Voor 2 1/4</td></tr>
-</tbody>
-</table>
-</div>
-
 <div id="result-section">
+
 <h3>Hasil Kalkulasi Dashboard:</h3>
 <table>
 <thead>
@@ -403,70 +379,6 @@ function autoGrowTextarea(el, minHeight) {
     let newHeight = el.scrollHeight;
     if (minHeight && newHeight < minHeight) newHeight = minHeight;
     el.style.height = newHeight + 'px';
-}
-
-// ============================================================
-// HANDLER KALKULATOR KONVERSI VOOR (UI "Kalkulator Baca Pasaran")
-// ============================================================
-// Menerima input dalam 3 kemungkinan format:
-//   1) Notasi Voor eksplisit   -> "Voor 3/4", "Voor 1 1/4", "Voor 2"
-//   2) Notasi rentang          -> "0.5-1", "-0.5-1", "+0.5-1"
-//   3) Desimal/pecahan biasa   -> "0.75", "3/4", "1 1/4", "-0.75"
-// Lalu menampilkan: nilai desimal, notasi Voor, notasi rentang (jika
-// garis quarter), dan pemecahan 2 sub-garisnya.
-function convertVoor() {
-    let raw = document.getElementById('voorInput').value;
-    let outEl = document.getElementById('voorResult');
-    outEl.style.display = 'block';
-
-    if (!raw || !raw.trim()) {
-        outEl.textContent = 'Masukkan nilai handicap terlebih dahulu.';
-        outEl.className = 'lose';
-        return;
-    }
-
-    let text = normalizeBetText(raw).trim();
-    let magnitude = null;
-
-    let voorMatch = text.match(/^voor\s+(.+)$/i);
-    if (voorMatch) {
-        magnitude = parseVoorFractionToDecimal(voorMatch[1].trim());
-    } else {
-        let rangeMatch = text.match(/^([+-]?)\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$/);
-        if (rangeMatch) {
-            let a = parseFloat(rangeMatch[2]), b = parseFloat(rangeMatch[3]);
-            magnitude = (a + b) / 2;
-        } else {
-            magnitude = parseVoorFractionToDecimal(text.replace(/^[+-]/, '').trim());
-        }
-    }
-
-    if (magnitude === null || isNaN(magnitude)) {
-        outEl.textContent = 'Format tidak dikenali. Contoh yang didukung: "0.75", "0.5-1", atau "Voor 3/4".';
-        outEl.className = 'lose';
-        return;
-    }
-
-    let info = decimalToVoorInfo(magnitude);
-    let lines = [];
-    lines.push('Desimal        : ' + fmtPlain(info.decimal));
-    lines.push('Notasi Voor    : ' + info.voorLabel);
-    if (info.isQuarter) {
-        lines.push('Notasi Rentang : ' + info.rangeLabel);
-        lines.push('');
-        lines.push('Ini garis QUARTER, di bandar dipecah jadi 2 sub-handicap');
-        lines.push('@ setengah stake masing-masing:');
-        lines.push('  Sub 1 : ' + fmtPlain(info.subLines[0]));
-        lines.push('  Sub 2 : ' + fmtPlain(info.subLines[1]));
-    } else {
-        lines.push('');
-        lines.push('Ini garis penuh/setengah biasa (tidak dipecah menjadi sub-garis).');
-    }
-    lines.push('');
-    lines.push('Catatan tanda: tim yang DI-VOOR (favorit) memakai MINUS (-' + fmtPlain(info.decimal) + '),');
-    lines.push('tim lawan (underdog, penerima voor) memakai PLUS (+' + fmtPlain(info.decimal) + ').');
-    outEl.textContent = lines.join('\n');
-    outEl.className = 'neutral';
 }
 
 
@@ -725,6 +637,7 @@ function asianHandicapReasoning(line, teamGoals, oppGoals, teamLabel, oppLabel) 
     }
     let quarterUnits = Math.round(line * 4);
     let isQuarterLine = quarterUnits % 2 !== 0;
+    let voorInfo = decimalToVoorInfo(line);
     let lines = [];
     let factor;
     if (isQuarterLine) {
@@ -732,7 +645,7 @@ function asianHandicapReasoning(line, teamGoals, oppGoals, teamLabel, oppLabel) 
         let upper = (quarterUnits + 1) / 4;
         let a = evalHalf(lower), b = evalHalf(upper);
         factor = (a.factor + b.factor) / 2;
-        lines.push("Handicap " + formatNumber(line) + " adalah garis QUARTER, dipecah jadi 2 sub-taruhan setengah stake:");
+        lines.push("Handicap " + formatNumber(line) + " (" + voorInfo.voorLabel + ") adalah garis QUARTER, dipecah jadi 2 sub-taruhan setengah stake:");
         lines.push("  Sub 1 - Handicap " + (lower >= 0 ? '+' : '') + formatNumber(lower) + ":");
         lines.push(a.text);
         lines.push("  Sub 2 - Handicap " + (upper >= 0 ? '+' : '') + formatNumber(upper) + ":");
@@ -741,7 +654,7 @@ function asianHandicapReasoning(line, teamGoals, oppGoals, teamLabel, oppLabel) 
     } else {
         let a = evalHalf(line);
         factor = a.factor;
-        lines.push("Handicap " + (line >= 0 ? '+' : '') + formatNumber(line) + " adalah garis penuh/setengah, dihitung langsung:");
+        lines.push("Handicap " + (line >= 0 ? '+' : '') + formatNumber(line) + " (" + voorInfo.voorLabel + ") adalah garis penuh/setengah, dihitung langsung:");
         lines.push(a.text);
         lines.push("-> factor " + formatNumber(factor) + " (" + statusLabelForFactorText(factor) + ")");
     }
@@ -771,6 +684,7 @@ function overUnderReasoning(line, total, selection) {
     }
     let quarterUnits = Math.round(line * 4);
     let isQuarterLine = quarterUnits % 2 !== 0;
+    let voorInfo = decimalToVoorInfo(line);
     let lines = [];
     let factor;
     let selLabel = selection === 'over' ? 'Over' : 'Under';
@@ -779,7 +693,7 @@ function overUnderReasoning(line, total, selection) {
         let upper = (quarterUnits + 1) / 4;
         let a = evalHalf(lower), b = evalHalf(upper);
         factor = (a.factor + b.factor) / 2;
-        lines.push(selLabel + " " + formatNumber(line) + " adalah garis QUARTER, dipecah jadi 2 sub-taruhan setengah stake:");
+        lines.push(selLabel + " " + formatNumber(line) + " (" + voorInfo.voorLabel + ") adalah garis QUARTER, dipecah jadi 2 sub-taruhan setengah stake:");
         lines.push("  Sub 1 - " + selLabel + " " + formatNumber(lower) + ":");
         lines.push(a.text);
         lines.push("  Sub 2 - " + selLabel + " " + formatNumber(upper) + ":");
@@ -788,7 +702,7 @@ function overUnderReasoning(line, total, selection) {
     } else {
         let a = evalHalf(line);
         factor = a.factor;
-        lines.push(selLabel + " " + formatNumber(line) + " adalah garis penuh/setengah, dihitung langsung:");
+        lines.push(selLabel + " " + formatNumber(line) + " (" + voorInfo.voorLabel + ") adalah garis penuh/setengah, dihitung langsung:");
         lines.push(a.text);
         lines.push("-> factor " + formatNumber(factor) + " (" + statusLabelForFactorText(factor) + ")");
     }
@@ -884,7 +798,8 @@ function describeMarketBase(betInfo) {
                             betInfo.side === 'away' ? betInfo.teamAway :
                             '(tim tidak cocok dengan Home/Away, mohon cek manual: "' + betInfo.selection + '")';
             let lineLabel = (betInfo.line > 0 ? '+' : '') + formatNumber(betInfo.line);
-            return 'Asian Handicap - Tim: ' + sideLabel + ' (' + lineLabel + ')';
+            let voorLabel = decimalToVoorInfo(betInfo.line).voorLabel;
+            return 'Asian Handicap - Tim: ' + sideLabel + ' (' + lineLabel + ' / ' + voorLabel + ')';
         }
         case '1x2':
             return 'FT 1X2 - Pilihan: ' +
@@ -892,7 +807,7 @@ function describeMarketBase(betInfo) {
                  betInfo.selection === 'away' ? 'Away Menang' :
                  betInfo.selection === 'draw' ? 'Seri (Draw)' : 'tidak dikenali');
         case 'ou':
-            return 'Over/Under - Pilihan: ' + (betInfo.selection === 'over' ? 'Over ' : 'Under ') + formatNumber(betInfo.line) + ' gol';
+            return 'Over/Under - Pilihan: ' + (betInfo.selection === 'over' ? 'Over ' : 'Under ') + formatNumber(betInfo.line) + ' gol (' + decimalToVoorInfo(betInfo.line).voorLabel + ')';
         case 'btts':
             return 'Both Teams To Score - Pilihan: ' +
                 (betInfo.selection === 'both' ? 'Ya, kedua tim mencetak gol' :
